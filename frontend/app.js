@@ -120,32 +120,40 @@ function showDashboard() {
   }
 
   switchTab('Dashboard');
-  // Load dashboard data if not already loaded
-  if (appState.vehicles.length === 0 && appState.drivers.length === 0) {
-    console.log('No data loaded yet, loading dashboard data...');
-    loadDashboardData();
-  }
+  loadDashboardData();
 }
 
 /**
  * Toggle authentication form between login and register
  */
+function setAuthFieldsEnabled(containerId, enabled) {
+  document.querySelectorAll(`#${containerId} input`).forEach((input) => {
+    input.disabled = !enabled;
+  });
+}
+
 function toggleAuthForm(event) {
   event.preventDefault();
   const isLogin = document.getElementById('login-fields').style.display !== 'none';
+  const errorDiv = document.getElementById('error-message');
+  const successDiv = document.getElementById('success-message');
+  errorDiv.style.display = 'none';
+  successDiv.style.display = 'none';
   
   if (isLogin) {
-    // Switch to register
     document.getElementById('login-fields').style.display = 'none';
     document.getElementById('register-fields').style.display = 'block';
+    setAuthFieldsEnabled('login-fields', false);
+    setAuthFieldsEnabled('register-fields', true);
     document.getElementById('login-title').textContent = 'Create your account';
     document.getElementById('login-subtitle').textContent = 'Register your fleet with Tracktable';
     document.getElementById('auth-btn').textContent = 'Register Now';
     document.getElementById('toggle-auth').innerHTML = 'Already have an account? <a href="#" onclick="toggleAuthForm(event)">Login here</a>';
   } else {
-    // Switch to login
     document.getElementById('login-fields').style.display = 'block';
     document.getElementById('register-fields').style.display = 'none';
+    setAuthFieldsEnabled('login-fields', true);
+    setAuthFieldsEnabled('register-fields', false);
     document.getElementById('login-title').textContent = 'Welcome back';
     document.getElementById('login-subtitle').textContent = 'Login to your fleet dashboard';
     document.getElementById('auth-btn').textContent = 'Login Now';
@@ -163,40 +171,28 @@ async function handleAuthSubmit(event) {
   const isLogin = document.getElementById('login-fields').style.display !== 'none';
   const errorDiv = document.getElementById('error-message');
   const successDiv = document.getElementById('success-message');
+  const submitBtn = document.getElementById('auth-btn');
   
   errorDiv.style.display = 'none';
   successDiv.style.display = 'none';
+  submitBtn.disabled = true;
   
   try {
     if (isLogin) {
-      // Login
-      const phone = document.getElementById('phone').value;
+      const phone = document.getElementById('phone').value.trim();
       const password = document.getElementById('password').value;
       
-      console.log('Attempting login with phone:', phone);
       const response = await authService.login({ phone, password });
-      console.log('Login response:', response);
-      
-      localStorage.setItem('access_token', response.access_token);
-      localStorage.setItem('refresh_token', response.refresh_token);
-      
-      appState.user = response.user;
-      appState.isAuthenticated = true;
-      
-      console.log('Login successful, showing dashboard');
-      showDashboard();
-      await loadDashboardData();
+      startSession(response);
     } else {
-      // Register
       const userData = {
-        name: document.getElementById('name').value,
-        phone: document.getElementById('reg-phone').value,
-        email: document.getElementById('email').value,
-        license_number: document.getElementById('license_number').value,
+        name: document.getElementById('name').value.trim(),
+        phone: document.getElementById('reg-phone').value.trim(),
+        email: document.getElementById('email').value.trim(),
+        license_number: document.getElementById('license_number').value.trim(),
         license_expiry: document.getElementById('license_expiry').value || null,
         password: document.getElementById('reg-password').value,
       };
-      
       const confirmPassword = document.getElementById('confirmPassword').value;
       
       if (userData.password !== confirmPassword) {
@@ -205,30 +201,31 @@ async function handleAuthSubmit(event) {
       }
       
       await authService.register(userData);
-      
-      showSuccess('Registration successful! Logging you in...');
-      
-      // Auto-login
-      setTimeout(async () => {
-        const loginResponse = await authService.login({
-          phone: userData.phone,
-          password: userData.password,
-        });
-        
-        localStorage.setItem('access_token', loginResponse.access_token);
-        localStorage.setItem('refresh_token', loginResponse.refresh_token);
-        
-        appState.user = loginResponse.user;
-        appState.isAuthenticated = true;
-        
-        showDashboard();
-        await loadDashboardData();
-      }, 1500);
+      const loginResponse = await authService.login({
+        phone: userData.phone,
+        password: userData.password,
+      });
+      startSession(loginResponse);
     }
   } catch (error) {
     console.error('Authentication error:', error);
     showError(error.message || 'Authentication failed');
+  } finally {
+    submitBtn.disabled = false;
   }
+}
+
+function startSession(response) {
+  localStorage.setItem('access_token', response.access_token);
+  localStorage.setItem('refresh_token', response.refresh_token);
+  appState.user = response.user;
+  appState.isAuthenticated = true;
+  appState.vehicles = [];
+  appState.drivers = [];
+  appState.users = [];
+  appState.tripRecords = [];
+  appState.maintenanceRecords = [];
+  showDashboard();
 }
 
 /**
@@ -1171,6 +1168,11 @@ function handleLogout() {
   authService.logout();
   appState.isAuthenticated = false;
   appState.user = null;
+  appState.vehicles = [];
+  appState.drivers = [];
+  appState.users = [];
+  appState.tripRecords = [];
+  appState.maintenanceRecords = [];
   showLoginPage();
 }
 
